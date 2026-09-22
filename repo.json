@@ -1,0 +1,9 @@
+{
+  "iconUrl": "https://www.google.com/s2/favicons?domain=cuevana3.me&sz=64",
+  "name": "Mi Cuevana",
+  "description": "Plugin de Cuevana actualizado",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/paulatrivino/storm-ext/builds/plugins.json"
+  ]
+}
