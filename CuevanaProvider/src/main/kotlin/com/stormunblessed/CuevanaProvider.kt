@@ -42,47 +42,128 @@ class CuevanaProvider : MainAPI() {
         }
     }
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val soup = app.get("$mainUrl/${request.data}/page/$page").document
-        val home = soup.select("section li.TPostMv").map {
-            val title = it.selectFirst("span.Title")?.text() ?: "Sin titulo"
-            val link = it.selectFirst("a")?.attr("href")?.replace("^/".toRegex(), "$mainUrl/") ?: ""
-            newTvSeriesSearchResponse(title, link, if (link.contains("/pelicula/")) TvType.Movie else TvType.TvSeries){
-                this.posterUrl = it.selectFirst("img")?.attr("src").resolvePoster()
-            }
-        }
-        if (home.isEmpty()) throw ErrorLoadingException()
-        return newHomePageResponse(
-            list = HomePageList(name = request.name, list = home),
-            hasNext = true
-        )
+   override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+    val url = when (request.data) {
+        "peliculas" -> "$mainUrl/peliculas"
+        "peliculas/estrenos" -> "$mainUrl/peliculas?orden=estrenos"
+        "series" -> "$mainUrl/series"
+        "series/estrenos" -> "$mainUrl/series?orden=estrenos"
+        else -> "$mainUrl/${request.data}"
     }
 
-    override suspend fun search(query: String): List<SearchResponse> {
-        val url = "$mainUrl/search?q=${query}"
-        val document = app.get(url).document
+    val finalUrl = if (page > 1) {
+        "$url&page=$page"
+    } else {
+        url
+    }
 
-        return document.select("li.TPostMv").map {
-            val title = it.selectFirst("span.Title")!!.text()
-            val href = it.selectFirst("a")!!.attr("href").replace("^/".toRegex(), "$mainUrl/")
-            val image = it.selectFirst("img")!!.attr("src").resolvePoster()
-            val isSerie = href.contains("/serie/")
+    val document = app.get(finalUrl).document
 
-            if (isSerie) {
-                newTvSeriesSearchResponse(title, href, TvType.TvSeries){
-                    this.posterUrl= image
+    val home = document.select("li.TPostMv, article.TPost, .MovieList li").mapNotNull { item ->
+        val linkElement = item.selectFirst("a[href]") ?: return@mapNotNull null
+        val link = fixUrl(linkElement.attr("href"))
+
+        if (link.isBlank()) return@mapNotNull null
+
+        val title = item.selectFirst(
+            "span.Title, .Title, h2, h3, img[alt]"
+        )?.let {
+            if (it.tagName() == "img") it.attr("alt") else it.text()
+        }?.trim().orEmpty()
+
+        if (title.isBlank()) return@mapNotNull null
+
+        val poster = item.selectFirst("img")?.let { img ->
+            img.attr("data-src")
+                .ifBlank { img.attr("src") }
+                .resolvePoster()
+        }
+
+        val type = when {
+            link.contains("/serie/") || link.contains("/series/") ->
+                TvType.TvSeries
+
+            link.contains("/pelicula/") || link.contains("/movie/") ->
+                TvType.Movie
+
+            else ->
+                if (request.data.contains("series")) TvType.TvSeries
+                else TvType.Movie
+        }
+
+        if (type == TvType.TvSeries) {
+            newTvSeriesSearchResponse(title, link, type) {
+                this.posterUrl = poster
+            }
+        } else {
+            newMovieSearchResponse(title, link, type) {
+                this.posterUrl = poster
+            }
+        }
+    }
+
+    if (home.isEmpty()) {
+        throw ErrorLoadingException("No se encontraron resultados en $finalUrl")
+    }
+
+    return newHomePageResponse(
+        list = HomePageList(
+            name = request.name,
+            list = home
+        ),
+        hasNext = home.isNotEmpty()
+    )
+}
+
+override suspend fun search(query: String): List<SearchResponse> {
+    val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+    val url = "$mainUrl/search?q=$encodedQuery"
+
+    val document = app.get(url).document
+
+    return document.select("li.TPostMv, article.TPost, .MovieList li")
+        .mapNotNull { item ->
+            val linkElement = item.selectFirst("a[href]")
+                ?: return@mapNotNull null
+
+            val href = fixUrl(linkElement.attr("href"))
+
+            val title = item.selectFirst(
+                "span.Title, .Title, h2, h3, img[alt]"
+            )?.let {
+                if (it.tagName() == "img") it.attr("alt") else it.text()
+            }?.trim().orEmpty()
+
+            if (href.isBlank() || title.isBlank()) {
+                return@mapNotNull null
+            }
+
+            val image = item.selectFirst("img")?.let { img ->
+                img.attr("data-src")
+                    .ifBlank { img.attr("src") }
+                    .resolvePoster()
+            }
+
+            if (href.contains("/serie/") || href.contains("/series/")) {
+                newTvSeriesSearchResponse(
+                    title,
+                    href,
+                    TvType.TvSeries
+                ) {
+                    this.posterUrl = image
                 }
             } else {
                 newMovieSearchResponse(
                     title,
                     href,
-                    TvType.Movie,
-                ){
+                    TvType.Movie
+                ) {
                     this.posterUrl = image
                 }
             }
         }
-    }
+}
+
 
     data class SeriesResponse(
         val props: Props?
@@ -163,7 +244,12 @@ class CuevanaProvider : MainAPI() {
             }
         }.orEmpty()
         val tags = soup.select("ul.InfoList li.AAIco-adjust:contains(Genero) a").map { it.text() }
-        val tvType = if (episodes == null || episodes.isEmpty()) TvType.Movie else TvType.TvSeries
+        val tvType = if (episodes.isEmpty()) {
+    TvType.Movie
+} else {
+    TvType.TvSeries
+}
+
         val recommendations =
             soup.select("ul.MovieList.Rows li").mapNotNull { element ->
                 if (element.parent()?.hasClass("episodes") == true) return@mapNotNull null
