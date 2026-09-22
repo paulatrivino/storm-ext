@@ -42,7 +42,11 @@ class CuevanaProvider : MainAPI() {
         }
     }
 
-   override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+override suspend fun getMainPage(
+    page: Int,
+    request: MainPageRequest
+): HomePageResponse {
+
     val url = when (request.data) {
         "peliculas" -> "$mainUrl/peliculas"
         "peliculas/estrenos" -> "$mainUrl/peliculas?orden=estrenos"
@@ -52,15 +56,35 @@ class CuevanaProvider : MainAPI() {
     }
 
     val finalUrl = if (page > 1) {
-        "$url&page=$page"
+        if (url.contains("?")) "$url&page=$page"
+        else "$url?page=$page"
     } else {
         url
     }
 
     val document = app.get(finalUrl).document
 
-    val home = document.select("li.TPostMv, article.TPost, .MovieList li").mapNotNull { item ->
-        val linkElement = item.selectFirst("a[href]") ?: return@mapNotNull null
+    val pageTitle = document.title()
+    val pageText = document.text().take(1000)
+
+    val movieElements = document.select(
+        "li.TPostMv, article.TPost, .MovieList li"
+    )
+
+    if (movieElements.isEmpty()) {
+        throw ErrorLoadingException(
+            "DIAGNOSTICO\n" +
+            "URL: $finalUrl\n" +
+            "TITLE: $pageTitle\n" +
+            "TEXT: $pageText"
+        )
+    }
+
+    val home = movieElements.mapNotNull { item ->
+
+        val linkElement = item.selectFirst("a[href]")
+            ?: return@mapNotNull null
+
         val link = fixUrl(linkElement.attr("href"))
 
         if (link.isBlank()) return@mapNotNull null
@@ -68,7 +92,11 @@ class CuevanaProvider : MainAPI() {
         val title = item.selectFirst(
             "span.Title, .Title, h2, h3, img[alt]"
         )?.let {
-            if (it.tagName() == "img") it.attr("alt") else it.text()
+            if (it.tagName() == "img") {
+                it.attr("alt")
+            } else {
+                it.text()
+            }
         }?.trim().orEmpty()
 
         if (title.isBlank()) return@mapNotNull null
@@ -80,15 +108,12 @@ class CuevanaProvider : MainAPI() {
         }
 
         val type = when {
-            link.contains("/serie/") || link.contains("/series/") ->
+            link.contains("/serie/") ||
+            link.contains("/series/") ->
                 TvType.TvSeries
 
-            link.contains("/pelicula/") || link.contains("/movie/") ->
-                TvType.Movie
-
             else ->
-                if (request.data.contains("series")) TvType.TvSeries
-                else TvType.Movie
+                TvType.Movie
         }
 
         if (type == TvType.TvSeries) {
@@ -103,7 +128,9 @@ class CuevanaProvider : MainAPI() {
     }
 
     if (home.isEmpty()) {
-        throw ErrorLoadingException("No se encontraron resultados en $finalUrl")
+        throw ErrorLoadingException(
+            "Se encontraron elementos HTML, pero ninguno pudo convertirse en resultados."
+        )
     }
 
     return newHomePageResponse(
