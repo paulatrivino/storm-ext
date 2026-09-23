@@ -67,26 +67,29 @@ override suspend fun getMainPage(
 
     val document = app.get(finalUrl).document
 
-    val selectors = listOf(
-        "article",
-        "article.TPost",
-        "li.TPostMv",
-        ".MovieList",
-        ".MovieList li",
-        ".TPostMv",
-        ".TPost",
-        ".Post",
-        ".item",
-        ".item-movie"
-    )
+    val result = buildString {
 
-    val result = selectors.joinToString("\n") { selector ->
-        "$selector = ${document.select(selector).size}"
+        appendLine("TITLE = ${document.title()}")
+
+        appendLine()
+        appendLine("ARTICLES = ${document.select("article").size}")
+        appendLine("DIVS = ${document.select("div").size}")
+        appendLine("LIS = ${document.select("li").size}")
+        appendLine("AS = ${document.select("a").size}")
+
+        appendLine()
+        appendLine("=== PRIMEROS LINKS ===")
+
+        document.select("a").take(30).forEachIndexed { index, element ->
+            appendLine()
+            appendLine("LINK $index")
+            appendLine("TEXT: ${element.text().take(150)}")
+            appendLine("HREF: ${element.attr("href")}")
+            appendLine("CLASS: ${element.attr("class")}")
+        }
     }
 
-    throw ErrorLoadingException(
-        "SELECTORES ENCONTRADOS:\n\n$result"
-    )
+    throw ErrorLoadingException(result)
 }
 
 override suspend fun search(query: String): List<SearchResponse> {
