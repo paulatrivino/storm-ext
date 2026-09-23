@@ -56,114 +56,36 @@ override suspend fun getMainPage(
     }
 
     val finalUrl = if (page > 1) {
-        if (url.contains("?")) "$url&page=$page"
-        else "$url?page=$page"
+        if (url.contains("?")) {
+            "$url&page=$page"
+        } else {
+            "$url?page=$page"
+        }
     } else {
         url
     }
 
     val document = app.get(finalUrl).document
 
-    val document = app.get(finalUrl).document
-
-val selectors = listOf(
-    "article",
-    "article.TPost",
-    "li.TPostMv",
-    ".MovieList",
-    ".MovieList li",
-    ".TPostMv",
-    ".TPost",
-    ".Post",
-    ".item",
-    ".item-movie"
-)
-
-val result = selectors.joinToString("\n") { selector ->
-    "$selector = ${document.select(selector).size}"
-}
-
-throw ErrorLoadingException(
-    "SELECTORES ENCONTRADOS:\n\n$result"
-)
-
-val home = document.select("li.TPostMv, article.TPost, .MovieList li").mapNotNull { item ->
-
-    val pageTitle = document.title()
-    val pageText = document.text().take(1000)
-
-    val movieElements = document.select(
-        "li.TPostMv, article.TPost, .MovieList li"
+    val selectors = listOf(
+        "article",
+        "article.TPost",
+        "li.TPostMv",
+        ".MovieList",
+        ".MovieList li",
+        ".TPostMv",
+        ".TPost",
+        ".Post",
+        ".item",
+        ".item-movie"
     )
 
-    if (movieElements.isEmpty()) {
-        throw ErrorLoadingException(
-            "DIAGNOSTICO\n" +
-            "URL: $finalUrl\n" +
-            "TITLE: $pageTitle\n" +
-            "TEXT: $pageText"
-        )
+    val result = selectors.joinToString("\n") { selector ->
+        "$selector = ${document.select(selector).size}"
     }
 
-    val home = movieElements.mapNotNull { item ->
-
-        val linkElement = item.selectFirst("a[href]")
-            ?: return@mapNotNull null
-
-        val link = fixUrl(linkElement.attr("href"))
-
-        if (link.isBlank()) return@mapNotNull null
-
-        val title = item.selectFirst(
-            "span.Title, .Title, h2, h3, img[alt]"
-        )?.let {
-            if (it.tagName() == "img") {
-                it.attr("alt")
-            } else {
-                it.text()
-            }
-        }?.trim().orEmpty()
-
-        if (title.isBlank()) return@mapNotNull null
-
-        val poster = item.selectFirst("img")?.let { img ->
-            img.attr("data-src")
-                .ifBlank { img.attr("src") }
-                .resolvePoster()
-        }
-
-        val type = when {
-            link.contains("/serie/") ||
-            link.contains("/series/") ->
-                TvType.TvSeries
-
-            else ->
-                TvType.Movie
-        }
-
-        if (type == TvType.TvSeries) {
-            newTvSeriesSearchResponse(title, link, type) {
-                this.posterUrl = poster
-            }
-        } else {
-            newMovieSearchResponse(title, link, type) {
-                this.posterUrl = poster
-            }
-        }
-    }
-
-    if (home.isEmpty()) {
-        throw ErrorLoadingException(
-            "Se encontraron elementos HTML, pero ninguno pudo convertirse en resultados."
-        )
-    }
-
-    return newHomePageResponse(
-        list = HomePageList(
-            name = request.name,
-            list = home
-        ),
-        hasNext = home.isNotEmpty()
+    throw ErrorLoadingException(
+        "SELECTORES ENCONTRADOS:\n\n$result"
     )
 }
 
