@@ -64,6 +64,31 @@ override suspend fun getMainPage(
 
     val document = app.get(finalUrl).document
 
+    val document = app.get(finalUrl).document
+
+val selectors = listOf(
+    "article",
+    "article.TPost",
+    "li.TPostMv",
+    ".MovieList",
+    ".MovieList li",
+    ".TPostMv",
+    ".TPost",
+    ".Post",
+    ".item",
+    ".item-movie"
+)
+
+val result = selectors.joinToString("\n") { selector ->
+    "$selector = ${document.select(selector).size}"
+}
+
+throw ErrorLoadingException(
+    "SELECTORES ENCONTRADOS:\n\n$result"
+)
+
+val home = document.select("li.TPostMv, article.TPost, .MovieList li").mapNotNull { item ->
+
     val pageTitle = document.title()
     val pageText = document.text().take(1000)
 
